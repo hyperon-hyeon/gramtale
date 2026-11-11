@@ -2,6 +2,7 @@
   "name": "gramtale",
   "private": true,
   "scripts": {
+    "build": "rm -rf dist && mkdir -p dist && cp -R .nojekyll 404.html index.html present.html icon.png css js dist/",
     "start": "node server.js"
   }
 }

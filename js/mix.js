@@ -147,10 +147,13 @@
     emptier: ["empty", "emptier", "the emptiest", "more empty", "as empty as"],
     safer: ["safe", "safer", "the safest", "more safe", "as safe as"],
     darker: ["dark", "darker", "the darkest", "more dark", "as dark as"],
+    closer: ["close", "closer", "the closest", "more close", "as close as"],
+    deeper: ["deep", "deeper", "the deepest", "more deep", "as deep as"],
+    braver: ["brave", "braver", "the bravest", "more brave", "as brave as"],
   };
 
-  const ER = ["longer", "shorter", "louder", "nearer", "older", "colder", "warmer", "bigger", "smaller", "thicker", "heavier", "lighter", "easier", "harder", "better", "worse", "later", "earlier", "clearer", "brighter", "emptier", "safer", "darker", "faded"];
-  const EST = ["longest", "shortest", "loudest", "nearest", "oldest", "coldest", "warmest", "biggest", "smallest", "thickest", "heaviest", "lightest", "easiest", "hardest", "best", "worst", "latest", "earliest", "clearest", "brightest", "safest"];
+  const ER = ["longer", "shorter", "louder", "nearer", "older", "colder", "warmer", "bigger", "smaller", "thicker", "heavier", "lighter", "easier", "harder", "better", "worse", "later", "earlier", "clearer", "brighter", "emptier", "safer", "darker", "closer", "deeper", "braver", "faded"];
+  const EST = ["longest", "shortest", "loudest", "nearest", "oldest", "coldest", "warmest", "biggest", "smallest", "thickest", "heaviest", "lightest", "easiest", "hardest", "best", "worst", "latest", "earliest", "clearest", "brightest", "safest", "closest", "deepest", "bravest"];
 
   function rotate(choices, answer, seed) {
     const index = choices.indexOf(answer);
@@ -222,19 +225,26 @@
   function pastBlank(item) {
     const negative = firstMatch(sentencesOf(item), /\b(did not|didn't)\b/);
     if (negative) {
+      const answer = negative.match[1];
       return {
         blank: negative.sentence.replace(negative.match[0], "____"),
-        choices: ["did not", "do not", "does not", "was not", "had not"],
-        answer: negative.match[1] === "didn't" ? "didn't" : "did not",
+        choices: answer === "didn't"
+          ? ["didn't", "don't", "doesn't", "wasn't", "hasn't"]
+          : ["did not", "do not", "does not", "was not", "had not"],
+        answer,
       };
     }
     const irregular = Object.keys(PAST).sort((a, b) => b.length - a.length);
     const irregularHit = firstMatch(sentencesOf(item), new RegExp(`\\b(${irregular.join("|")})\\b`));
     if (irregularHit) {
       const answer = irregularHit.match[1];
+      const forms = PAST[answer];
+      const choices = answer === "was" || answer === "were"
+        ? forms
+        : [forms[0], forms[1], forms[2], forms[4], `to ${forms[1]}`];
       return {
         blank: irregularHit.sentence.replace(irregularHit.match[0], "____"),
-        choices: PAST[answer],
+        choices,
         answer,
       };
     }
@@ -247,7 +257,7 @@
     const ing = base.endsWith("e") && !base.endsWith("ee") ? `${base.slice(0, -1)}ing` : `${base}ing`;
     return {
       blank: regular.sentence.replace(regular.match[0], "____"),
-      choices: [answer, base, third, `didn't ${base}`, ing],
+      choices: [answer, base, third, ing, `to ${base}`],
       answer,
     };
   }
@@ -307,7 +317,7 @@
         answer: choices.includes(phrase) ? phrase : choices[0],
       };
     }
-    const er = firstMatch(lines, new RegExp(`\\b(${ER.join("|")}) than\\b`));
+    const er = firstMatch(lines, new RegExp(`\\b(${ER.join("|")})\\b(?=[^.!?]*\\bthan\\b)`));
     if (er && COMPARE[er.match[1]]) {
       const word = er.match[1];
       return {
@@ -339,43 +349,95 @@
     modal: modalBlank,
   };
 
-  const HEADS = {
-    be: "빈칸에 들어갈 be동사는",
-    present: "빈칸에 들어갈 현재 표현은",
-    past: "빈칸에 들어갈 과거 표현은",
-    compare: "빈칸에 들어갈 비교 표현은",
-    modal: "빈칸에 들어갈 조동사는",
-  };
-
   function reason(grammar, answer) {
     if (grammar === "be") {
-      if (answer === "are" || answer === "aren't" || answer === "are not") return "주어가 여럿이면 are를 쓴다.";
-      if (answer === "am") return "주어가 I이면 am을 쓴다.";
-      if (String(answer).includes("not") || String(answer).includes("n't")) return "이 문장은 부정이라서 not이 필요하다.";
-      return "주어가 하나이면 is를 쓴다.";
+      if (answer === "are" || answer === "aren't" || answer === "are not") return "둘 이상인 주어에는 are를 사용해요.";
+      if (answer === "am") return "주어가 I일 때는 am을 사용해요.";
+      if (String(answer).includes("not") || String(answer).includes("n't")) return "부정의 뜻을 나타내려면 not이 포함된 형태가 필요해요.";
+      return "한 사람이나 하나의 사물을 나타내는 주어에는 is를 사용해요.";
     }
     if (grammar === "present") {
-      if (String(answer).startsWith("does")) return "주어가 한 명이면 does not, doesn't를 쓴다.";
-      if (String(answer).startsWith("do")) return "주어가 I, you, 여럿이면 do not, don't를 쓴다.";
-      return "습관이나 사실이고, 주어가 셋으로 끝나면 동사에 -s를 붙인다.";
+      if (String(answer).startsWith("does")) return "한 사람을 주어로 한 현재 부정문에는 does not 또는 doesn't를 사용해요.";
+      if (String(answer).startsWith("do")) return "I, you 또는 복수 주어의 현재 부정문에는 do not 또는 don't를 사용해요.";
+      return `반복되는 일이나 현재의 사실에서 3인칭 단수 주어 뒤에는 ${answer}를 사용해요.`;
     }
     if (grammar === "past") {
-      if (String(answer).startsWith("did")) return "과거의 부정은 did not이다. 뒤의 동사는 원래 형태로 둔다.";
-      if (answer === "was") return "과거 be동사는 주어가 하나이면 was다.";
-      if (answer === "were") return "과거 be동사는 주어가 여럿이면 were다.";
-      return "이미 끝난 일이므로 동사의 과거형을 쓴다.";
+      if (String(answer).startsWith("did")) return "과거의 부정은 did not으로 만들고, 뒤의 동사는 원형으로 사용해요.";
+      if (answer === "was") return "한 사람이나 하나의 사물의 과거 상태에는 was를 사용해요.";
+      if (answer === "were") return "둘 이상인 주어의 과거 상태에는 were를 사용해요.";
+      return `과거에 끝난 일을 나타내므로 ${answer}처럼 과거형을 사용해요.`;
     }
     if (grammar === "compare") {
-      if (String(answer).startsWith("the most") || /^the [a-z]+est$/.test(answer)) return "셋 이상을 견줄 때는 최상급을 쓴다.";
-      if (String(answer).startsWith("as ")) return "같은 정도를 말할 때는 as와 as 사이에 원급을 둔다.";
-      if (String(answer).startsWith("less") || String(answer).startsWith("more")) return "긴 형용사는 more나 less로 비교한다.";
-      return "짧은 형용사는 -er than으로 비교한다.";
+      if (String(answer).startsWith("the most") || /^the [a-z]+est$/.test(answer)) return "셋 이상을 비교해 가장 두드러진 하나를 말할 때는 최상급을 사용해요.";
+      if (String(answer).startsWith("as ")) return "두 대상의 정도가 같을 때는 as와 as 사이에 원급을 사용해요.";
+      if (String(answer).startsWith("less") || String(answer).startsWith("more")) return "긴 형용사를 비교할 때는 앞에 more나 less를 사용해요.";
+      return `두 대상을 비교하는 문장이므로 ${answer}처럼 비교급을 사용해요.`;
     }
-    if (answer === "can't") return "할 수 없다는 뜻은 can't이다.";
-    if (answer === "can") return "할 수 있다는 뜻은 can이다.";
-    if (answer === "must") return "꼭 해야 한다는 뜻은 must이다.";
-    if (answer === "must not") return "하면 안 된다는 뜻은 must not이다.";
-    return "하는 편이 좋다는 뜻은 should이다.";
+    if (answer === "can't") return "할 수 없다는 뜻을 나타내려면 can't를 사용해요.";
+    if (answer === "can") return "할 수 있다는 뜻을 나타내려면 can을 사용해요.";
+    if (answer === "must") return "반드시 해야 하는 일을 나타내려면 must를 사용해요.";
+    if (answer === "must not") return "하면 안 되는 일을 나타내려면 must not을 사용해요.";
+    return "조언하거나 권할 때는 should를 사용해요.";
+  }
+
+  function detailedExplanation(grammar, made) {
+    const answer = made.answer;
+    const sentence = made.blank.replace("____", answer);
+    const opening = `정답은 ${answer}이다. 문장을 완성하면 “${sentence}”가 된다.`;
+
+    if (grammar === "be") {
+      if (answer === "am") {
+        return `${opening} am은 주어가 I일 때만 쓰는 현재형이다. is는 한 사람이나 하나의 사물, are는 둘 이상인 주어와 연결하므로 이 자리에는 맞지 않는다.`;
+      }
+      if (answer === "are" || answer === "aren't" || answer === "are not") {
+        return `${opening} 빈칸과 연결되는 주어가 둘 이상이므로 are 계열이 필요하다. is는 단수 주어에 쓰고, am은 I와만 쓰므로 제외한다. 문장이 부정이면 not이 포함된 형태를 골라야 한다.`;
+      }
+      return `${opening} 빈칸과 연결되는 주어가 한 사람이나 하나의 사물이므로 is 계열이 필요하다. are는 복수 주어, am은 I와 쓰는 형태이며, 긍정과 부정도 문장의 뜻에 맞춰 구분해야 한다.`;
+    }
+
+    if (grammar === "present") {
+      if (String(answer).startsWith("does")) {
+        return `${opening} 주어가 한 명인 현재형 부정문이므로 does not 또는 doesn't를 쓴다. does 뒤에는 동사원형이 오며, don't와 과거형 didn't는 이 문장의 주어와 시제에 맞지 않는다.`;
+      }
+      if (String(answer).startsWith("do")) {
+        return `${opening} I, you 또는 복수 주어의 현재형 부정에는 do not 또는 don't를 쓴다. does not은 3인칭 단수, did not은 과거를 나타내므로 제외한다.`;
+      }
+      return `${opening} 반복되는 일이나 현재의 사실을 말하고, 주어가 3인칭 단수이므로 동사에 -s 또는 -es가 붙은 ${answer}가 필요하다. 동사원형과 과거형, -ing형은 같은 자리에 올 수 없다.`;
+    }
+
+    if (grammar === "past") {
+      if (answer === "was") {
+        return `${opening} 주어가 한 명이고 이미 지난 상황을 말하므로 be동사의 단수 과거형 was를 쓴다. were는 복수 주어와 쓰고, is와 are는 현재형이라 시간 기준에 맞지 않는다.`;
+      }
+      if (answer === "were") {
+        return `${opening} 주어가 둘 이상이고 이미 지난 상황을 말하므로 be동사의 복수 과거형 were를 쓴다. was는 단수 주어와 쓰고, is와 are는 현재형이다.`;
+      }
+      if (String(answer).startsWith("did")) {
+        return `${opening} 과거의 부정은 did not 또는 didn't로 만들고, 그 뒤의 동사는 원형으로 둔다. do not과 does not은 현재 시제이므로 맞지 않는다.`;
+      }
+      return `${opening} 장면이 이미 끝난 일을 말하므로 동사의 과거형 ${answer}가 필요하다. 동사원형과 3인칭 단수형은 현재를, -ing형은 진행 중인 동작을 나타내므로 이 문장의 시간과 맞지 않는다.`;
+    }
+
+    if (grammar === "compare") {
+      if (String(answer).startsWith("the ") || String(answer).startsWith("the most")) {
+        return `${opening} 셋 이상 가운데 가장 두드러진 하나를 고르는 문장이므로 the가 포함된 최상급을 쓴다. 두 대상을 비교하는 -er 또는 more 형태만으로는 범위 전체의 ‘가장’을 나타낼 수 없다.`;
+      }
+      if (String(answer).startsWith("as ")) {
+        return `${opening} 두 대상의 정도가 같다는 뜻이므로 as + 원급 + as 구조가 필요하다. -er than과 more는 한쪽이 더 크거나 강하다는 뜻이라 문맥과 다르다.`;
+      }
+      if (String(answer).startsWith("more ") || String(answer).startsWith("less ")) {
+        return `${opening} 긴 형용사의 정도를 비교하므로 형용사 앞에 more 또는 less를 둔다. the most는 최상급이고, 형용사에 -er를 바로 붙인 형태는 이 단어에 맞지 않는다.`;
+      }
+      return `${opening} than을 기준으로 두 대상을 비교하므로 비교급 ${answer}가 필요하다. 원급은 비교를 만들지 못하고, the가 붙은 최상급은 셋 이상에서 하나를 고를 때 쓴다.`;
+    }
+
+    if (answer === "can" || answer === "can't") {
+      return `${opening} 문맥에서 가능한지 불가능한지를 판단해야 하므로 ${answer}가 알맞다. can과 can't 뒤에는 주어와 관계없이 동사원형이 오며, 의무를 나타내는 must와 조언을 나타내는 should는 뜻이 다르다.`;
+    }
+    if (answer === "must" || answer === "must not") {
+      return `${opening} 문맥이 강한 의무나 금지를 나타내므로 ${answer}가 필요하다. can은 가능, should는 조언을 나타내며, 모든 조동사 뒤에는 동사원형을 쓴다.`;
+    }
+    return `${opening} 강한 의무가 아니라 조언을 나타내는 문장이므로 should가 알맞다. can은 가능, must는 반드시 해야 하는 의무를 뜻하며, should 뒤에는 동사원형이 온다.`;
   }
 
   function applyBlank(grammar, item, seed) {
@@ -386,7 +448,7 @@
     item.blank = made.blank;
     item.choices = rotate(made.choices, made.answer, seed);
     item.blankAnswer = made.answer;
-    item.explain = `${HEADS[grammar]} ${made.answer}이다. ${why}`;
+    item.explain = detailedExplanation(grammar, made);
     item.grammar = why;
     return true;
   }
@@ -808,8 +870,9 @@
         story.beats[beatIndex].bridge = line;
       });
     }
-    const beat = story.beats[1];
-    applyBlank(story.grammar, beat, index + 3);
-    applyBlank(story.grammar, beat.retry, index + 11);
+    story.beats.forEach((beat, beatIndex) => {
+      applyBlank(story.grammar, beat, index * 7 + beatIndex + 3);
+      applyBlank(story.grammar, beat.retry, index * 11 + beatIndex + 7);
+    });
   });
 })(typeof window !== "undefined" ? window : globalThis);

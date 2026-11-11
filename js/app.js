@@ -28,6 +28,16 @@
       .replace(/"/g, "&quot;");
   }
 
+  function sentenceLines(value) {
+    const text = String(value).trim();
+    const protectedText = text.replace(/\b(Mr|Mrs|Ms|Dr|St)\./g, "$1\uE000");
+    const sentences = protectedText.match(/[^.!?]+(?:[.!?]+["']?|$)/g) || [protectedText];
+    return sentences
+      .map((sentence) => esc(sentence.replace(/\uE000/g, ".").trim()))
+      .filter(Boolean)
+      .join("<br>");
+  }
+
   function loadDone() {
     try {
       return JSON.parse(localStorage.getItem(STORE)) || [];
@@ -54,6 +64,10 @@
 
   function formatOrder(code) {
     return code.split("").map((letter) => `(${letter})`).join(" – ");
+  }
+
+  function arrowIcon() {
+    return `<span class="card-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M7 17 17 7M9 7h8v8"/></svg></span>`;
   }
 
   function isBlank(beat) {
@@ -89,12 +103,12 @@
     if (!parts.length) return { screen: "home" };
     const grammar = data.grammars.find((item) => item.id === parts[0]);
     if (!grammar) return { screen: "home" };
-    if (parts.length === 1) return { screen: "level", grammar };
+    if (parts.length === 1) return { screen: "level", grammar, level: 1 };
     const level = Number(parts[1]);
-    if (![1, 2, 3].includes(level)) return { screen: "level", grammar };
-    if (parts.length === 2) return { screen: "genre", grammar, level };
+    if (![1, 2, 3].includes(level)) return { screen: "level", grammar, level: 1 };
+    if (parts.length === 2) return { screen: "level", grammar, level };
     const genre = data.genres.find((item) => item.id === parts[2]);
-    if (!genre) return { screen: "genre", grammar, level };
+    if (!genre) return { screen: "level", grammar, level };
     const story = data.stories.find(
       (item) => item.grammar === grammar.id && item.level === level && item.genre === genre.id
     );
@@ -126,13 +140,12 @@
   function setTitle() {
     if (state.screen === "home") document.title = "그램테일";
     else if (state.screen === "level") document.title = `${state.grammar.name} · 그램테일`;
-    else if (state.screen === "genre") document.title = `${state.grammar.name} 레벨 ${state.level} · 그램테일`;
     else if (state.story) document.title = `${state.story.title} · 그램테일`;
     else document.title = "그램테일";
   }
 
   function shell(body) {
-    return `<div class="wrap">${body}</div>`;
+    return `<div class="wrap wrap-${state.screen}">${body}</div>`;
   }
 
   function crumb() {
@@ -141,7 +154,7 @@
     if (state.grammar) {
       bits.push(`<span>/</span><button data-go="/${state.grammar.id}">${esc(state.grammar.name)}</button>`);
     }
-    if (state.level) {
+    if (state.level && state.screen !== "level") {
       bits.push(`<span>/</span><button data-go="/${state.grammar.id}/${state.level}">레벨 ${state.level}</button>`);
     }
     if (state.genre && state.screen === "story") {
@@ -153,71 +166,103 @@
   function renderHome() {
     const items = data.grammars.map((grammar) => `
       <li>
-        <button data-go="/${grammar.id}">
+        <button class="grammar-card interactive-card" data-go="/${grammar.id}">
           <span class="num">${grammar.index}</span>
           <strong>${esc(grammar.name)}</strong>
+          ${arrowIcon()}
         </button>
       </li>`).join("");
 
     return `
-      <h1 class="home-title">그램테일</h1>
-      <p class="lede">이야기로 배우는 영문법</p>
-      <ol class="toc">${items}</ol>`;
+      <header class="topbar">
+        <span class="mark"><img class="logo" src="/icon.png" alt="" /><span>그램테일</span></span>
+        <span class="top-note">STORY-BASED ENGLISH</span>
+      </header>
+      <section class="home-hero">
+        <div class="hero-copy">
+          <p class="hero-kicker"><span></span> 문법이 이야기가 되는 순간</p>
+          <h1 class="home-title">읽다 보면,<br><em>문법이 보인다.</em></h1>
+          <p class="lede">짧은 영어 이야기 속에서 문장을 고르고 다음 장면을 여세요.<br class="hero-break"> 외우기 전에 읽고, 문제를 풀며 자연스럽게 익힙니다.</p>
+        </div>
+        <aside class="hero-grammar">
+          <div class="grammar-heading">
+            <p class="kicker">CURRICULUM</p>
+            <h2>문법을 골라 시작하세요.</h2>
+          </div>
+          <ol class="toc">${items}</ol>
+        </aside>
+      </section>`;
   }
 
   function renderLevel() {
     const grammar = state.grammar;
     const cards = data.levels.map((level) => `
-      <button class="level" data-go="/${grammar.id}/${level.id}">
+      <button class="level-choice interactive-card ${state.level === level.id ? "selected" : ""}"
+        data-action="select-level" data-level="${level.id}" aria-pressed="${state.level === level.id}">
         <span class="badge">${level.id}</span>
-        <strong class="choice-en">LEVEL ${level.id}</strong>
+        <span>
+          <span class="choice-en">LEVEL ${level.id}</span>
+        </span>
       </button>`).join("");
+    const books = genreCards();
 
     return `
       ${crumb()}
-      <p class="kicker">${esc(grammar.en)}</p>
-      <h2>${esc(grammar.name)}</h2>
-      <div class="levels">${cards}</div>`;
+      <header class="choice-head">
+        <p class="kicker">${esc(grammar.en)} · ${esc(grammar.grade)}</p>
+        <h1>${esc(grammar.name)} 이야기 고르기</h1>
+        <p class="sub">레벨과 장르를 한 번에 골라 바로 이야기를 시작하세요.</p>
+      </header>
+      <section class="selection-block">
+        <div class="selection-label">
+          <span>01</span>
+          <div><b>레벨 선택</b><small>문장을 잇는 단서의 난이도</small></div>
+        </div>
+        <div class="level-selector">${cards}</div>
+      </section>
+      <section class="selection-block genre-selection">
+        <div class="selection-label">
+          <span>02</span>
+          <div><b>장르 선택</b><small>LEVEL ${state.level} · 세 가지 이야기</small></div>
+        </div>
+        <div class="shelf">${books}</div>
+      </section>`;
   }
 
-  function renderGenre() {
+  function genreCards() {
     const done = loadDone();
-    const books = data.genres.map((genre) => {
+    return data.genres.map((genre) => {
       const key = `${state.grammar.id}-${state.level}-${genre.id}`;
       const sticker = done.includes(key) ? `<span class="done-sticker">완독</span>` : "";
+      const story = data.stories.find(
+        (item) => item.grammar === state.grammar.id && item.level === state.level && item.genre === genre.id
+      );
       return `
-        <button class="book" data-go="/${state.grammar.id}/${state.level}/${genre.id}">
-          <strong class="choice-en">${esc(genre.en.toUpperCase())}</strong>
-          ${sticker}
+        <button class="book book-${genre.id} interactive-card" data-go="/${state.grammar.id}/${state.level}/${genre.id}">
+          <span class="book-index">0${data.genres.indexOf(genre) + 1}</span>
+          <span class="book-copy">
+            <span class="choice-en">${esc(genre.en.toUpperCase())}</span>
+            <strong>${esc(genre.name)}</strong>
+            <p class="story-title">${story ? esc(story.title) : "이야기 준비 중"}</p>
+          </span>
+          <span class="book-foot">${sticker}${arrowIcon()}</span>
         </button>`;
     }).join("");
-
-    return `
-      ${crumb()}
-      <p class="kicker">레벨 ${state.level}</p>
-      <h2>어떤 이야기로 읽을까</h2>
-      <div class="shelf">${books}</div>`;
   }
 
   function passageBlock(beat) {
     const lines = orderedText(beat).map((part) => `
-      <p class="chunk-line"><b>${part.n}.</b> ${esc(part.text)}</p>`).join("");
+      <p class="chunk-line"><b>${part.n}.</b> ${sentenceLines(part.text)}</p>`).join("");
     return `
       <div class="passage">
-        <p class="lead-line">${esc(beat.lead)}</p>
+        <p class="lead-line">${sentenceLines(beat.lead)}</p>
         ${lines}
       </div>`;
   }
 
   function storyLog() {
-    const story = state.story;
-    let html = `<p class="narration">${esc(story.intro)}</p>`;
-    story.beats.forEach((beat, index) => {
-      if (index < state.quizIndex) {
-        html += `<p class="narration">${esc(beat.bridge)}</p>${passageBlock(beat)}`;
-      }
-    });
-    return html;
+    if (state.quizIndex > 0) return "";
+    return `<p class="narration">${sentenceLines(state.story.intro)}</p>`;
   }
 
   function optionItems(beat) {
@@ -255,13 +300,13 @@
     const chunks = ["A", "B", "C"].map((letter) => `
       <article class="chunk">
         <span class="letter">${letter}</span>
-        <p>${esc(beat[letter])}</p>
+        <p>${sentenceLines(beat[letter])}</p>
       </article>`).join("");
     const shake = group === "main" && state.phase !== "ask" && state.results[state.quizIndex] && !state.results[state.quizIndex].first;
 
     const passage = isBlank(beat)
-      ? `<p class="en blank-line">${esc(beat.blank).replace("____", `<span class="gap" style="width:${Math.min(11, Math.max(2.4, beat.blankAnswer.length * 0.52))}em"></span>`)}</p>`
-      : `<p class="en">${esc(beat.lead)}</p>`;
+      ? `<p class="en blank-line">${sentenceLines(beat.blank).replace("____", `<span class="gap" style="width:${Math.min(11, Math.max(2.4, beat.blankAnswer.length * 0.52))}em"></span>`)}</p>`
+      : `<p class="en">${sentenceLines(beat.lead)}</p>`;
     return `
       <section class="quiz" id="${group === "main" ? "quiz" : "retry"}">
         <div class="lead">
@@ -278,7 +323,6 @@
   function renderQuiz() {
     const story = state.story;
     const beat = currentBeat();
-    const level = data.levels.find((item) => item.id === story.level);
     const result = state.results[state.quizIndex];
     let extra = "";
 
@@ -293,13 +337,12 @@
     if (state.phase === "retry" || (state.phase === "done" && result && !result.first)) {
       extra += `
         <section class="explain" id="explain">
-          <h3>해설 · 정답 ${esc(solutionLabel(beat))}</h3>
+          <h3>정답은 ${esc(solutionLabel(beat))}</h3>
           <p>${esc(beat.explain)}</p>
-          <p class="grammar-line">${esc(beat.grammar)}</p>
         </section>
         <section class="retry-banner" id="retry-banner">
-          <h3>비슷한 문제</h3>
-          <p>같은 문법, 다른 장면. 방금 해설의 단서를 한 번 더 써 보자.</p>
+          <h3>다시 풀기</h3>
+          <p>방금 확인한 문법을 새 문장에 적용해 보세요.</p>
         </section>
         ${questionCard(beat.retry, "retry", state.retryPick)}`;
     }
@@ -316,7 +359,7 @@
       if (result.first) {
         extra += `
           <section class="good-note" id="reveal">
-            <h3>맞았다 · ${esc(solutionLabel(beat))}</h3>
+            <h3>정답은 ${esc(solutionLabel(beat))}</h3>
             <p class="grammar-line">${esc(beat.grammar)}</p>
           </section>`;
       } else {
@@ -324,19 +367,16 @@
         const retryOk = result.retry;
         extra += `
           <section class="${retryOk ? "good-note" : "explain"}" id="retry-result">
-            <h3>${retryOk ? "재도전을 맞혔다" : "재도전 해설"} · ${esc(solutionLabel(retryBeat))}</h3>
-            ${retryOk ? "" : `<p>${esc(retryBeat.explain)}</p>`}
-            <p class="grammar-line">${esc(retryBeat.grammar)}</p>
+            <h3>정답은 ${esc(solutionLabel(retryBeat))}</h3>
+            ${retryOk
+              ? `<p class="grammar-line">${esc(retryBeat.grammar)}</p>`
+              : `<p>${esc(retryBeat.explain)}</p>`}
           </section>`;
       }
       const last = state.quizIndex === story.beats.length - 1;
       extra += `
-        <div id="continued">
-          <div class="q-label"><b>이어진 장면</b><span>${esc(solutionLabel(beat))}</span></div>
-          ${passageBlock(beat)}
-        </div>
         <div class="actions">
-          <button class="btn btn-primary" data-action="next">${last ? "결말 읽기" : "다음 장면"}</button>
+          <button class="btn btn-primary" data-action="next">${last ? "결말 읽기" : "다음 문제"}</button>
         </div>`;
     }
 
@@ -368,11 +408,10 @@
         </div>
         <div class="rail" aria-hidden="true">${rails}</div>
         ${storyLog()}
-        ${showBridge ? `<p class="narration">${esc(beat.bridge)}</p>` : ""}
+        ${showBridge ? `<p class="narration">${sentenceLines(beat.bridge)}</p>` : ""}
         ${state.phase === "ending" ? "" : `
           <div class="q-label">
             <b>${state.quizIndex + 1}번</b>
-            <span>${esc(level.title)}</span>
           </div>
           <p class="prompt">${promptFor(beat)}</p>
           ${questionCard(beat, "main", state.pick)}
@@ -385,19 +424,27 @@
     const story = state.story;
     const stamps = state.results.map((result, index) => {
       const kind = result.first ? "good" : result.retry ? "retry" : "miss";
-      const label = result.first ? "첫 시도" : result.retry ? "재도전" : "한 번 더";
-      const word = result.first ? "맞춤" : result.retry ? "이어 감" : "해설";
-      return `<div class="stamp ${kind}">${index + 1}번<br>${label}<br>${word}</div>`;
+      const label = result.first ? "정답" : result.retry ? "재도전 정답" : "해설 확인";
+      return `<div class="stamp ${kind}"><span>${index + 1}번</span><strong>${label}</strong></div>`;
     }).join("");
     const firstCount = state.results.filter((result) => result.first).length;
-    const summary = firstCount === 3
-      ? "세 문항을 모두 첫 시도에 맞혔다."
-      : `첫 시도 ${firstCount}개. 막힌 자리는 해설과 비슷한 문제가 이어 주었다.`;
-    const recap = story.recap.map((line) => `<li>${esc(line)}</li>`).join("");
+    const summary = `첫 시도 ${firstCount} / 3 정답`;
+    const recap = story.beats.map((beat) => {
+      const answer = solutionLabel(beat);
+      const sentence = beat.blank.replace("____", answer);
+      return `
+        <li>
+          <strong>${esc(answer)}</strong>
+          <span class="recap-copy">
+            <span>${esc(sentence)}</span>
+            <small>${esc(beat.grammar)}</small>
+          </span>
+        </li>`;
+    }).join("");
     const full = `
-      <p class="narration">${esc(story.intro)}</p>
-      ${story.beats.map((beat) => `<p class="narration">${esc(beat.bridge)}</p>${passageBlock(beat)}`).join("")}
-      <p class="narration">${esc(story.ending)}</p>`;
+      <p class="narration">${sentenceLines(story.intro)}</p>
+      ${story.beats.map((beat) => `<p class="narration">${sentenceLines(beat.bridge)}</p>${passageBlock(beat)}`).join("")}
+      <p class="narration">${sentenceLines(story.ending)}</p>`;
 
     return `
       ${crumb()}
@@ -407,6 +454,7 @@
         <p class="en-title">${esc(story.titleEn)}</p>
         <p class="sub">${summary}</p>
         <div class="stamps">${stamps}</div>
+        <p class="end-label">이번에 완성한 문장</p>
         <ul class="recap">${recap}</ul>
         <p class="end-label">전체 이야기</p>
         ${full}
@@ -432,13 +480,13 @@
     if (!data || !data.stories) body = `<p>이야기를 불러오지 못했다.</p>`;
     else if (state.screen === "home") body = renderHome();
     else if (state.screen === "level") body = renderLevel();
-    else if (state.screen === "genre") body = renderGenre();
     else if (!state.story) body = renderMissing();
     else if (state.phase === "ending") body = renderEnding();
     else body = renderQuiz();
 
     const y = window.scrollY;
     app.innerHTML = shell(body);
+    bindSurfaceInteractions();
     if (state.scrollTo === "top") window.scrollTo(0, 0);
     else if (state.scrollTo) {
       const target = document.getElementById(state.scrollTo);
@@ -462,6 +510,16 @@
     state.phase = ok ? "done" : "retry";
     state.scrollTo = ok ? "reveal" : "explain";
     render();
+  }
+
+  function bindSurfaceInteractions() {
+    app.querySelectorAll(".interactive-card").forEach((card) => {
+      card.addEventListener("pointermove", (event) => {
+        const rect = card.getBoundingClientRect();
+        card.style.setProperty("--mx", `${event.clientX - rect.left}px`);
+        card.style.setProperty("--my", `${event.clientY - rect.top}px`);
+      });
+    });
   }
 
   function gradeRetry() {
@@ -500,6 +558,15 @@
     const button = event.target.closest("[data-action]");
     if (!button) return;
     const action = button.dataset.action;
+    if (action === "select-level") {
+      const level = Number(button.dataset.level);
+      if (![1, 2, 3].includes(level) || level === state.level) return;
+      history.pushState({}, "", `/${state.grammar.id}/${level}`);
+      state.level = level;
+      state.routeKey = ["level", state.grammar.id, level, ""].join("|");
+      render();
+      return;
+    }
     if (action === "pick") {
       const group = button.dataset.group;
       if (group === "main" && state.phase === "ask") state.pick = button.dataset.code;
@@ -556,5 +623,5 @@
   }
 
   window.addEventListener("popstate", sync);
-  sync();
+  window.setTimeout(sync, Math.max(0, 900 - performance.now()));
 })();
